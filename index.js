@@ -9,14 +9,14 @@ dotenv.config();
 const app = express();
 app.use(bodyParser.json());
 
-// ✅ 1. Load knowledge base dari file
+// ✅ Load knowledge base sekali saat server start
 (async () => {
   const text = fs.readFileSync("./data/knowledge.txt", "utf-8");
   const chunks = text.split(/\n\n+/);
   await loadKnowledgeBase(chunks);
 })();
 
-// ✅ 2. Webhook verification untuk Meta Dashboard
+// ✅ Webhook verification untuk Meta
 app.get("/webhook", (req, res) => {
   const mode = req.query["hub.mode"];
   const token = req.query["hub.verify_token"];
@@ -30,7 +30,7 @@ app.get("/webhook", (req, res) => {
   }
 });
 
-// ✅ 3. Endpoint untuk menerima pesan masuk dari WhatsApp
+// ✅ Handler pesan masuk dari WhatsApp
 app.post("/webhook", async (req, res) => {
   try {
     const changes = req.body.entry?.[0]?.changes?.[0];
@@ -38,28 +38,28 @@ app.post("/webhook", async (req, res) => {
     if (!message) return res.sendStatus(200);
 
     const from = message.from;
-    const text = message.text?.body;
+    const text = message.text?.body || "";
 
     console.log(`📩 Pesan dari ${from}: ${text}`);
 
-    // 🔹 4. Proses pertanyaan via RAG (OpenAI + knowledge base)
-    const reply = await getAnswerFromKnowledgeBase(text);
+    // 🔸 Cek apakah pesan mengandung trigger "!bertanya"
+    if (!text.toLowerCase().includes("!bertanya")) {
+      console.log("⏩ Pesan tidak mengandung '!bertanya', diabaikan.");
+      return res.sendStatus(200); // Tidak kirim balasan
+    }
 
-    // 🔹 5. Kirim jawaban balik ke WhatsApp
-    await axios.post(
-      `https://graph.facebook.com/v21.0/${process.env.PHONE_NUMBER_ID}/messages`,
-      {
-        messaging_product: "whatsapp",
-        to: from,
-        text: { body: reply },
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
-          "Content-Type": "application/json",
-        },
-      }
-    );
+    // 🔹 Bersihkan teks dari "!bertanya" untuk dikirim ke AI
+    const question = text.replace(/!bertanya/gi, "").trim();
+    if (question.length === 0) {
+      await sendWhatsAppMessage(from, "Silakan tulis pertanyaan setelah '!bertanya'.");
+      return res.sendStatus(200);
+    }
+
+    // 🔹 Panggil AI dengan knowledge base
+    const reply = await getAnswerFromKnowledgeBase(question);
+
+    // 🔹 Kirim jawaban balik ke WhatsApp
+    await sendWhatsAppMessage(from, reply);
 
     res.sendStatus(200);
   } catch (error) {
@@ -68,7 +68,24 @@ app.post("/webhook", async (req, res) => {
   }
 });
 
-// ✅ 6. Start server
+// ✅ Fungsi helper untuk kirim pesan ke WhatsApp
+async function sendWhatsAppMessage(to, text) {
+  await axios.post(
+    `https://graph.facebook.com/v21.0/${process.env.PHONE_NUMBER_ID}/messages`,
+    {
+      messaging_product: "whatsapp",
+      to,
+      text: { body: text },
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
+        "Content-Type": "application/json",
+      },
+    }
+  );
+}
+
 app.listen(process.env.PORT || 3000, () => {
   console.log(`🚀 Server running on port ${process.env.PORT || 3000}`);
 });
