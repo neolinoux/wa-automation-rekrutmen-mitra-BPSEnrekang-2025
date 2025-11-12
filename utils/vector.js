@@ -37,6 +37,18 @@ export async function getAnswerFromKnowledgeBase(question) {
   try {
     if (!vectorStore) await loadKnowledgeBase();
 
+    // 🕒 Pastikan waktu sesuai zona Indonesia (WITA / WIB)
+    const now = new Date();
+    const today = now.toLocaleDateString("id-ID", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+      timeZone: "Asia/Makassar" // atau "Asia/Jakarta" tergantung lokasi kamu
+    });
+    console.log(`🕓 Sekarang (server time): ${now.toISOString()}`);
+    console.log(`🕒 Sekarang (Indonesia time): ${today}`);
+
     const llm = new ChatOpenAI({
       modelName: "gpt-4o-mini",
       temperature: 0,
@@ -66,14 +78,19 @@ export async function getAnswerFromKnowledgeBase(question) {
       "petugas",
       "enrekang",
       "daftar",
-      "mendaftar"
+      "mendaftar",
+      "jadwal",
+      "login",
+      "cara",
+      "rekruitmen"
     ];
 
     const isRelevant = relatedKeywords.some((kw) => lowerQ.includes(kw));
 
     if (!isRelevant) {
       // ❌ Pertanyaan umum di luar konteks
-      return "Pertanyaan tersebut bukan pertanyaan terkait rekrutmen mitra BPS Kabupaten Enrekang. 🙏";
+      console.log(`❌ [OUT OF CONTEXT] "${question}"`);
+      return "Sistem ini hanya melayani pertanyaan seputar rekrutmen mitra BPS Kabupaten Enrekang tahun 2026. Untuk pertanyaan lain, silakan hubungi admin BPS Kabupaten Enrekang. 🙏";
     }
 
     // ✅ Pertanyaan relevan → lanjutkan dengan knowledge base
@@ -82,14 +99,19 @@ export async function getAnswerFromKnowledgeBase(question) {
       promptTemplate: `
 Anda adalah ADIMAS, asisten virtual resmi Badan Pusat Statistik (BPS) Kabupaten Enrekang.
 
+📅 Saat ini adalah ${today} (zona waktu Indonesia bagian tengah - WITA).
+Gunakan informasi waktu ini untuk menjawab pertanyaan yang berkaitan dengan tanggal, durasi, atau status pendaftaran/seleksi.
+
 🎯 Tugas utama Anda:
-- Menjawab pertanyaan **hanya jika berkaitan dengan rekrutmen mitra BPS Kabupaten Enrekang tahun 2026**.
-- Semua jawaban harus berdasarkan knowledge base di bawah ini.
-- Jika pengguna menanyakan hal di luar konteks rekrutmen mitra BPS Enrekang 2026 (misalnya sensus, data statistik, atau pertanyaan umum), jawab persis:
+- Jawab **hanya pertanyaan seputar rekrutmen mitra BPS Kabupaten Enrekang tahun 2026**.
+- Semua jawaban berdasarkan knowledge base di bawah.
+- Jika pengguna menanyakan waktu atau tanggal (misalnya "sudah dimulai belum", "berapa hari lagi", "kapan dimulai"), gunakan tanggal saat ini (${today}) untuk menghitung atau menilai statusnya.
+- Jika pertanyaan tidak relevan dengan topik rekrutmen, jawab:
   "Pertanyaan tersebut bukan pertanyaan terkait rekrutmen mitra BPS Kabupaten Enrekang. 🙏"
-- Jika pertanyaan masih relevan tapi tidak ditemukan di knowledge base, jawab:
+- Jika topiknya masih relevan tapi tidak ditemukan di knowledge base, jawab:
   "Pertanyaan tersebut akan diteruskan kepada admin BPS Kabupaten Enrekang. Mohon tunggu balasan selanjutnya. 🙏"
-Gunakan bahasa profesional, sopan, dan singkat.
+
+Gunakan bahasa sopan, profesional, dan ringkas.
 
 ---
 📚 Knowledge Base:
@@ -99,7 +121,7 @@ Gunakan bahasa profesional, sopan, dan singkat.
 {question}
 
 💬 Jawaban ADIMAS:
-      `,
+  `,
     });
 
     const response = await chain.call({ query: question });
@@ -118,6 +140,12 @@ Gunakan bahasa profesional, sopan, dan singkat.
       answer =
         "Pertanyaan tersebut akan diteruskan kepada admin BPS Kabupaten Enrekang. Mohon tunggu balasan selanjutnya. 🙏";
     }
+
+    // 🧾 Log pertanyaan dan jawaban ke console
+    console.log("─────────────────────────────");
+    console.log("❓ Pertanyaan:", question);
+    console.log("💬 Jawaban:", answer);
+    console.log("─────────────────────────────");
 
     return answer;
   } catch (err) {
